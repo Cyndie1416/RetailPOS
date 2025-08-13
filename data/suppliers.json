@@ -1,0 +1,26 @@
+[
+  {
+    "id": 1,
+    "name": "ABC Distributors",
+    "contactPerson": "Juan Santos",
+    "phone": "+63 912 345 6789",
+    "email": "juan@abcdistributors.com",
+    "address": "123 Supplier Street, Manila",
+    "products": ["Coca Cola", "Pepsi", "Sprite"],
+    "paymentTerms": "Net 30",
+    "lastOrder": "2024-01-15",
+    "status": "active"
+  },
+  {
+    "id": 2,
+    "name": "XYZ Food Supply",
+    "contactPerson": "Maria Garcia",
+    "phone": "+63 923 456 7890",
+    "email": "maria@xyzfood.com",
+    "address": "456 Food Avenue, Quezon City",
+    "products": ["Pancit Canton", "Skyflakes", "Nescafe"],
+    "paymentTerms": "Cash on Delivery",
+    "lastOrder": "2024-01-10",
+    "status": "active"
+  }
+]

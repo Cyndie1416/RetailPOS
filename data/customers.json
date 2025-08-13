@@ -1,0 +1,54 @@
+[
+  {
+    "id": 1,
+    "name": "Juan Dela Cruz",
+    "phone": "+63 912 345 6789",
+    "address": "123 Main Street, Barangay 1",
+    "location": {
+      "latitude": 14.5995,
+      "longitude": 120.9842,
+      "googleMapsUrl": "https://maps.google.com/?q=14.5995,120.9842"
+    },
+    "creditLimit": 500.00,
+    "utang": 150.00,
+    "itemsToReturn": ["Coca Cola bottle"],
+    "smsEnabled": true,
+    "lastSmsReminder": "2024-01-10",
+    "customerType": "regular",
+    "utangHistory": [
+      {
+        "id": 1,
+        "date": "2024-01-15",
+        "items": [
+          {
+            "productName": "Coca Cola 330ml",
+            "quantity": 3,
+            "price": 25.00,
+            "total": 75.00
+          },
+          {
+            "productName": "Pancit Canton",
+            "quantity": 2,
+            "price": 8.50,
+            "total": 17.00
+          }
+        ],
+        "amount": 150.00,
+        "dueDate": "2024-01-30",
+        "status": "unpaid",
+        "notes": "Weekly groceries"
+      }
+    ],
+    "paymentHistory": [
+      {
+        "date": "2024-01-05",
+        "amount": 200.00,
+        "method": "cash",
+        "notes": "Partial payment"
+      }
+    ],
+    "createdDate": "2023-06-01",
+    "lastVisit": "2024-01-15",
+    "status": "active"
+  }
+]

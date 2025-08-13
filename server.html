@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POS System - Direct Access</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            padding: 20px; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-align: center;
+        }
+        .container {
+            background: rgba(255,255,255,0.1);
+            padding: 30px;
+            border-radius: 15px;
+            margin: 20px auto;
+            max-width: 600px;
+        }
+        .btn {
+            background: #3498db;
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            margin: 10px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn:hover {
+            background: #2980b9;
+        }
+        .status {
+            background: rgba(255,255,255,0.2);
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏪 Sari-Sari Store POS System</h1>
+        <p>Direct Access Portal</p>
+        
+        <div class="status">
+            <h3>System Status</h3>
+            <div id="status">Checking system...</div>
+        </div>
+        
+        <div>
+            <a href="index.html" class="btn">🚀 Open POS System</a>
+            <a href="test.html" class="btn">🔧 System Test</a>
+        </div>
+        
+        <div style="margin-top: 30px; text-align: left;">
+            <h3>Quick Login Credentials:</h3>
+            <p><strong>Owner Account:</strong><br>
+            Username: <code>owner</code><br>
+            Password: <code>owner123</code></p>
+            
+            <p><strong>Cashier Account:</strong><br>
+            Username: <code>cashier</code><br>
+            Password: <code>cashier123</code></p>
+        </div>
+        
+        <div style="margin-top: 30px; font-size: 0.9rem;">
+            <p>If login doesn't work, try opening the files directly:</p>
+            <p><code>file:///C:/Users/cyndi/OneDrive/文档/Work/Website/SariPOS/index.html</code></p>
+        </div>
+    </div>
+
+    <script>
+        // Check if files are accessible
+        async function checkSystem() {
+            const status = document.getElementById('status');
+            let results = [];
+            
+            try {
+                const response = await fetch('data/users.json');
+                if (response.ok) {
+                    const users = await response.json();
+                    results.push(`✅ Users loaded: ${users.length} accounts`);
+                } else {
+                    results.push(`❌ Users file error: ${response.status}`);
+                }
+            } catch (error) {
+                results.push(`❌ Users file error: ${error.message}`);
+            }
+            
+            try {
+                const response = await fetch('data/products.json');
+                if (response.ok) {
+                    const products = await response.json();
+                    results.push(`✅ Products loaded: ${products.length} items`);
+                } else {
+                    results.push(`❌ Products file error: ${response.status}`);
+                }
+            } catch (error) {
+                results.push(`❌ Products file error: ${error.message}`);
+            }
+            
+            status.innerHTML = results.join('<br>');
+        }
+        
+        checkSystem();
+    </script>
+</body>
+</html>
