@@ -41,7 +41,10 @@
                 <p>Complete Point of Sale System</p>
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
                     <span id="currentUser" style="font-size: 0.9rem;">Logged in as: <span id="userName">Store Owner</span></span>
-                    <button onclick="logout()" style="padding: 8px 15px; background: #e74c3c; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 0.9rem;">Logout</button>
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span id="sessionStatus" style="font-size: 0.8rem; color: #27ae60;">● Session Active</span>
+                        <button onclick="logout()" style="padding: 8px 15px; background: #e74c3c; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 0.9rem;">Logout</button>
+                    </div>
                 </div>
             </div>
 
@@ -388,6 +391,74 @@
         </div>
     </div>
 
+    <!-- Edit Product Modal -->
+    <div id="editProductModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 15px; width: 90%; max-width: 500px; max-height: 90vh; overflow-y: auto;">
+            <h2>✏️ Edit Product</h2>
+            <input type="hidden" id="editProductId">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div class="form-group">
+                    <label>Product Name *</label>
+                    <input type="text" id="editProductName" placeholder="Enter product name" required>
+                </div>
+                <div class="form-group">
+                    <label>Category</label>
+                    <select id="editProductCategory">
+                        <option value="snacks">Snacks</option>
+                        <option value="beverages">Beverages</option>
+                        <option value="household">Household</option>
+                        <option value="personal">Personal Care</option>
+                        <option value="others">Others</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Price (₱) *</label>
+                    <input type="number" id="editProductPrice" step="0.01" placeholder="0.00" required>
+                </div>
+                <div class="form-group">
+                    <label>Cost Price (₱)</label>
+                    <input type="number" id="editProductCostPrice" step="0.01" placeholder="0.00">
+                </div>
+                <div class="form-group">
+                    <label>Stock Quantity *</label>
+                    <input type="number" id="editProductStock" placeholder="0" required>
+                </div>
+                <div class="form-group">
+                    <label>Unit</label>
+                    <select id="editProductUnit">
+                        <option value="piece">Piece</option>
+                        <option value="pack">Pack</option>
+                        <option value="kg">Kilogram</option>
+                        <option value="liter">Liter</option>
+                        <option value="bottle">Bottle</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Expiry Date</label>
+                    <input type="date" id="editProductExpiry">
+                </div>
+                <div class="form-group">
+                    <label>Supplier</label>
+                    <select id="editProductSupplier">
+                        <option value="">Select Supplier</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Location</label>
+                    <input type="text" id="editProductLocation" placeholder="Shelf A1">
+                </div>
+                <div class="form-group" style="grid-column: 1 / -1;">
+                    <label>Barcode (optional)</label>
+                    <input type="text" id="editProductBarcode" placeholder="Enter barcode">
+                </div>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn btn-primary" onclick="updateProduct()">Update Product</button>
+                <button class="btn btn-warning" onclick="closeModal('editProductModal')">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Add Customer Modal -->
     <div id="addCustomerModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
         <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 15px; width: 90%; max-width: 500px; max-height: 90vh; overflow-y: auto;">
@@ -494,6 +565,121 @@
             <div style="display: flex; gap: 10px; margin-top: 20px;">
                 <button class="btn btn-primary" onclick="addUser()">Add User</button>
                 <button class="btn btn-warning" onclick="closeModal('addUserModal')">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Customer Modal -->
+    <div id="editCustomerModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 15px; width: 90%; max-width: 500px; max-height: 90vh; overflow-y: auto;">
+            <h2>✏️ Edit Customer</h2>
+            <input type="hidden" id="editCustomerId">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div class="form-group">
+                    <label>Full Name *</label>
+                    <input type="text" id="editCustomerName" placeholder="Enter customer name" required>
+                </div>
+                <div class="form-group">
+                    <label>Phone Number *</label>
+                    <input type="text" id="editCustomerPhone" placeholder="+63 912 345 6789" required>
+                </div>
+                <div class="form-group" style="grid-column: 1 / -1;">
+                    <label>Address</label>
+                    <textarea id="editCustomerAddress" rows="2" placeholder="Enter customer address"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Credit Limit (₱)</label>
+                    <input type="number" id="editCustomerCreditLimit" step="0.01" placeholder="0.00">
+                </div>
+                <div class="form-group" style="display: flex; align-items: center; gap: 10px;">
+                    <input type="checkbox" id="editCustomerSmsEnabled" checked>
+                    <label style="margin: 0;">Enable SMS Reminders</label>
+                </div>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn btn-primary" onclick="updateCustomer()">Update Customer</button>
+                <button class="btn btn-warning" onclick="closeModal('editCustomerModal')">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Supplier Modal -->
+    <div id="editSupplierModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 15px; width: 90%; max-width: 500px; max-height: 90vh; overflow-y: auto;">
+            <h2>✏️ Edit Supplier</h2>
+            <input type="hidden" id="editSupplierId">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div class="form-group">
+                    <label>Supplier Name *</label>
+                    <input type="text" id="editSupplierName" placeholder="Enter supplier name" required>
+                </div>
+                <div class="form-group">
+                    <label>Contact Person *</label>
+                    <input type="text" id="editSupplierContact" placeholder="Enter contact person" required>
+                </div>
+                <div class="form-group">
+                    <label>Phone Number *</label>
+                    <input type="text" id="editSupplierPhone" placeholder="+63 912 345 6789" required>
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="editSupplierEmail" placeholder="supplier@email.com">
+                </div>
+                <div class="form-group" style="grid-column: 1 / -1;">
+                    <label>Address</label>
+                    <textarea id="editSupplierAddress" rows="2" placeholder="Enter supplier address"></textarea>
+                </div>
+                <div class="form-group" style="grid-column: 1 / -1;">
+                    <label>Payment Terms</label>
+                    <input type="text" id="editSupplierPaymentTerms" placeholder="Net 30, COD, etc.">
+                </div>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn btn-primary" onclick="updateSupplier()">Update Supplier</button>
+                <button class="btn btn-warning" onclick="closeModal('editSupplierModal')">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit User Modal -->
+    <div id="editUserModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 30px; border-radius: 15px; width: 90%; max-width: 500px; max-height: 90vh; overflow-y: auto;">
+            <h2>✏️ Edit User</h2>
+            <input type="hidden" id="editUserId">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div class="form-group">
+                    <label>Username *</label>
+                    <input type="text" id="editUserUsername" placeholder="Enter username" required>
+                </div>
+                <div class="form-group">
+                    <label>Full Name *</label>
+                    <input type="text" id="editUserName" placeholder="Enter full name" required>
+                </div>
+                <div class="form-group">
+                    <label>Role</label>
+                    <select id="editUserRole">
+                        <option value="cashier">Cashier</option>
+                        <option value="owner">Owner</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="editUserEmail" placeholder="user@email.com">
+                </div>
+                <div class="form-group">
+                    <label>Phone</label>
+                    <input type="text" id="editUserPhone" placeholder="+63 912 345 6789">
+                </div>
+                <div class="form-group" style="grid-column: 1 / -1;">
+                    <p style="color: #666; font-size: 0.9rem; margin: 0;">
+                        <strong>Note:</strong> Password cannot be changed here for security reasons. 
+                        Users should reset their password through the system administrator.
+                    </p>
+                </div>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button class="btn btn-primary" onclick="updateUser()">Update User</button>
+                <button class="btn btn-warning" onclick="closeModal('editUserModal')">Cancel</button>
             </div>
         </div>
     </div>

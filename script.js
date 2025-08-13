@@ -19,7 +19,136 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('Data loading completed');
     console.log('Users loaded:', users);
     setupEventListeners();
+    
+    // Check for existing session
+    checkExistingSession();
 });
+
+// Check for existing login session
+function checkExistingSession() {
+    try {
+        const sessionData = localStorage.getItem('sariPOS_session');
+        if (sessionData) {
+            const session = JSON.parse(sessionData);
+            console.log('Found existing session:', session);
+            
+            // Check if session is not too old (24 hours)
+            const loginTime = new Date(session.loginTime);
+            const now = new Date();
+            const hoursDiff = (now - loginTime) / (1000 * 60 * 60);
+            
+            if (hoursDiff < 24) {
+                // Find the user
+                const user = users.find(u => u.id === session.userId && u.username === session.username);
+                if (user && user.status === 'active') {
+                    console.log('Restoring session for user:', user.name);
+                    
+                    // Restore the session
+                    currentUser = user;
+                    document.getElementById('loginScreen').style.display = 'none';
+                    document.getElementById('mainApp').style.display = 'block';
+                    document.getElementById('userName').textContent = user.name;
+                    
+                    // Update user permissions
+                    updateUserPermissions();
+                    
+                    // Load initial data
+                    displayProducts();
+                    displayInventory();
+                    displayCustomers();
+                    displaySuppliers();
+                    displayUsers();
+                    displayReports();
+                    loadSettings();
+                    
+                    // Start session timeout
+                    startSessionTimeout();
+                    updateSessionStatus();
+                    
+                    console.log('Session restored successfully');
+                    return;
+                }
+            } else {
+                console.log('Session expired, clearing...');
+                localStorage.removeItem('sariPOS_session');
+            }
+        }
+    } catch (error) {
+        console.error('Error checking session:', error);
+        localStorage.removeItem('sariPOS_session');
+    }
+    
+    console.log('No valid session found, showing login screen');
+}
+
+// Session timeout management
+let sessionTimeoutId = null;
+const SESSION_TIMEOUT_MINUTES = 60; // 1 hour of inactivity
+
+function startSessionTimeout() {
+    // Clear any existing timeout
+    if (sessionTimeoutId) {
+        clearTimeout(sessionTimeoutId);
+    }
+    
+    // Set new timeout
+    sessionTimeoutId = setTimeout(() => {
+        console.log('Session timeout - logging out user');
+        alert('Your session has expired due to inactivity. Please log in again.');
+        logout();
+    }, SESSION_TIMEOUT_MINUTES * 60 * 1000);
+    
+    // Update session timestamp
+    const sessionData = localStorage.getItem('sariPOS_session');
+    if (sessionData) {
+        const session = JSON.parse(sessionData);
+        session.lastActivity = new Date().toISOString();
+        localStorage.setItem('sariPOS_session', JSON.stringify(session));
+    }
+}
+
+function resetSessionTimeout() {
+    if (currentUser) {
+        startSessionTimeout();
+        updateSessionStatus();
+    }
+}
+
+function updateSessionStatus() {
+    const sessionStatus = document.getElementById('sessionStatus');
+    if (!sessionStatus) return;
+    
+    const sessionData = localStorage.getItem('sariPOS_session');
+    if (sessionData) {
+        const session = JSON.parse(sessionData);
+        const lastActivity = new Date(session.lastActivity || session.loginTime);
+        const now = new Date();
+        const minutesSinceActivity = (now - lastActivity) / (1000 * 60);
+        
+        if (minutesSinceActivity < 30) {
+            sessionStatus.textContent = '● Session Active';
+            sessionStatus.style.color = '#27ae60';
+        } else if (minutesSinceActivity < 50) {
+            sessionStatus.textContent = '⚠ Session Expiring Soon';
+            sessionStatus.style.color = '#f39c12';
+        } else {
+            sessionStatus.textContent = '⚠ Session Expiring';
+            sessionStatus.style.color = '#e74c3c';
+        }
+    }
+}
+
+// Add activity listeners to reset timeout
+document.addEventListener('click', resetSessionTimeout);
+document.addEventListener('keypress', resetSessionTimeout);
+document.addEventListener('scroll', resetSessionTimeout);
+
+// Update session status every minute
+setInterval(() => {
+    if (currentUser) {
+        updateSessionStatus();
+    }
+}, 60000); // Update every minute
 
 // Setup event listeners
 function setupEventListeners() {
@@ -50,6 +179,18 @@ async function login() {
         
         if (user && user.status === 'active') {
             currentUser = user;
+            
+            // Save login session to localStorage
+            localStorage.setItem('sariPOS_session', JSON.stringify({
+                userId: user.id,
+                username: user.username,
+                loginTime: new Date().toISOString()
+            }));
+            
+            // Start session timeout monitoring
+            startSessionTimeout();
+            updateSessionStatus();
+            
             document.getElementById('loginScreen').style.display = 'none';
             document.getElementById('mainApp').style.display = 'block';
             document.getElementById('userName').textContent = user.name;
@@ -87,6 +228,16 @@ async function login() {
 function logout() {
     currentUser = null;
     cart = [];
+    
+    // Clear session timeout
+    if (sessionTimeoutId) {
+        clearTimeout(sessionTimeoutId);
+        sessionTimeoutId = null;
+    }
+    
+    // Clear session from localStorage
+    localStorage.removeItem('sariPOS_session');
+    
     document.getElementById('loginScreen').style.display = 'flex';
     document.getElementById('mainApp').style.display = 'none';
     document.getElementById('loginUsername').value = '';
@@ -761,6 +912,7 @@ function displayCustomers() {
             <td>${customer.itemsToReturn.join(', ') || 'None'}</td>
             <td>${new Date(customer.lastVisit).toLocaleDateString()}</td>
             <td>
+                <button onclick="editCustomer(${customer.id})" class="btn btn-sm btn-primary">Edit</button>
                 <button onclick="viewCustomerDetails(${customer.id})" class="btn btn-sm btn-info">View</button>
                 <button onclick="addUtang(${customer.id})" class="btn btn-sm btn-warning">Add Utang</button>
                 <button onclick="recordPayment(${customer.id})" class="btn btn-sm btn-success">Payment</button>
@@ -1009,9 +1161,117 @@ function viewSupplierDetails(supplierId) {
 
 function editSupplier(supplierId) {
     const supplier = suppliers.find(s => s.id === supplierId);
-    if (!supplier) return;
+    if (!supplier) {
+        alert('Supplier not found!');
+        return;
+    }
     
-    alert('Edit supplier functionality will be implemented in the next version.');
+    // Fill form with supplier data
+    document.getElementById('editSupplierId').value = supplier.id;
+    document.getElementById('editSupplierName').value = supplier.name;
+    document.getElementById('editSupplierContact').value = supplier.contactPerson;
+    document.getElementById('editSupplierPhone').value = supplier.phone;
+    document.getElementById('editSupplierEmail').value = supplier.email || '';
+    document.getElementById('editSupplierAddress').value = supplier.address || '';
+    document.getElementById('editSupplierPaymentTerms').value = supplier.paymentTerms || '';
+    
+    // Show modal
+    document.getElementById('editSupplierModal').style.display = 'block';
+}
+
+function updateSupplier() {
+    const id = parseInt(document.getElementById('editSupplierId').value);
+    const name = document.getElementById('editSupplierName').value;
+    const contactPerson = document.getElementById('editSupplierContact').value;
+    const phone = document.getElementById('editSupplierPhone').value;
+    const email = document.getElementById('editSupplierEmail').value;
+    const address = document.getElementById('editSupplierAddress').value;
+    const paymentTerms = document.getElementById('editSupplierPaymentTerms').value;
+    
+    if (!name || !contactPerson || !phone) {
+        alert('Please fill in name, contact person, and phone number');
+        return;
+    }
+    
+    const supplierIndex = suppliers.findIndex(s => s.id == id);
+    if (supplierIndex === -1) {
+        alert('Supplier not found!');
+        return;
+    }
+    
+    // Update supplier
+    suppliers[supplierIndex] = {
+        ...suppliers[supplierIndex],
+        name: name,
+        contactPerson: contactPerson,
+        phone: phone,
+        email: email,
+        address: address,
+        paymentTerms: paymentTerms
+    };
+    
+    // Close modal and refresh display
+    closeModal('editSupplierModal');
+    displaySuppliers();
+    saveData();
+    
+    alert('Supplier updated successfully!');
+}
+
+function editCustomer(customerId) {
+    const customer = customers.find(c => c.id === customerId);
+    if (!customer) {
+        alert('Customer not found!');
+        return;
+    }
+    
+    // Fill form with customer data
+    document.getElementById('editCustomerId').value = customer.id;
+    document.getElementById('editCustomerName').value = customer.name;
+    document.getElementById('editCustomerPhone').value = customer.phone;
+    document.getElementById('editCustomerAddress').value = customer.address || '';
+    document.getElementById('editCustomerCreditLimit').value = customer.creditLimit || 0;
+    document.getElementById('editCustomerSmsEnabled').checked = customer.smsEnabled !== false;
+    
+    // Show modal
+    document.getElementById('editCustomerModal').style.display = 'block';
+}
+
+function updateCustomer() {
+    const id = parseInt(document.getElementById('editCustomerId').value);
+    const name = document.getElementById('editCustomerName').value;
+    const phone = document.getElementById('editCustomerPhone').value;
+    const address = document.getElementById('editCustomerAddress').value;
+    const creditLimit = parseFloat(document.getElementById('editCustomerCreditLimit').value);
+    const smsEnabled = document.getElementById('editCustomerSmsEnabled').checked;
+    
+    if (!name || !phone) {
+        alert('Please fill in name and phone number');
+        return;
+    }
+    
+    const customerIndex = customers.findIndex(c => c.id == id);
+    if (customerIndex === -1) {
+        alert('Customer not found!');
+        return;
+    }
+    
+    // Update customer
+    customers[customerIndex] = {
+        ...customers[customerIndex],
+        name: name,
+        phone: phone,
+        address: address,
+        creditLimit: creditLimit || 0,
+        smsEnabled: smsEnabled
+    };
+    
+    // Close modal and refresh display
+    closeModal('editCustomerModal');
+    displayCustomers();
+    saveData();
+    
+    alert('Customer updated successfully!');
 }
 
 function viewCustomerDetails(customerId) {
@@ -1023,16 +1283,159 @@ function viewCustomerDetails(customerId) {
 
 function editProduct(productId) {
     const product = products.find(p => p.id === productId);
-    if (!product) return;
+    if (!product) {
+        alert('Product not found!');
+        return;
+    }
     
-    alert('Edit product functionality will be implemented in the next version.');
+    // Populate supplier dropdown
+    const supplierSelect = document.getElementById('editProductSupplier');
+    supplierSelect.innerHTML = '<option value="">Select Supplier</option>';
+    suppliers.forEach(supplier => {
+        supplierSelect.innerHTML += `<option value="${supplier.id}" ${product.supplierId == supplier.id ? 'selected' : ''}>${supplier.name}</option>`;
+    });
+    
+    // Fill form with product data
+    document.getElementById('editProductId').value = product.id;
+    document.getElementById('editProductName').value = product.name;
+    document.getElementById('editProductCategory').value = product.category;
+    document.getElementById('editProductPrice').value = product.price;
+    document.getElementById('editProductCostPrice').value = product.costPrice || 0;
+    document.getElementById('editProductStock').value = product.stock;
+    document.getElementById('editProductUnit').value = product.unit;
+    document.getElementById('editProductExpiry').value = product.expiryDate || '';
+    document.getElementById('editProductLocation').value = product.location || '';
+    document.getElementById('editProductBarcode').value = product.barcode || '';
+    
+    // Show modal
+    document.getElementById('editProductModal').style.display = 'block';
+}
+
+function updateProduct() {
+    const id = parseInt(document.getElementById('editProductId').value);
+    const name = document.getElementById('editProductName').value;
+    const category = document.getElementById('editProductCategory').value;
+    const price = parseFloat(document.getElementById('editProductPrice').value);
+    const costPrice = parseFloat(document.getElementById('editProductCostPrice').value);
+    const stock = parseInt(document.getElementById('editProductStock').value);
+    const unit = document.getElementById('editProductUnit').value;
+    const expiry = document.getElementById('editProductExpiry').value;
+    const supplierId = document.getElementById('editProductSupplier').value;
+    const location = document.getElementById('editProductLocation').value;
+    const barcode = document.getElementById('editProductBarcode').value;
+    
+    if (!name || !price || stock < 0) {
+        alert('Please fill in all required fields');
+        return;
+    }
+    
+    const productIndex = products.findIndex(p => p.id == id);
+    if (productIndex === -1) {
+        alert('Product not found!');
+        return;
+    }
+    
+    const supplier = suppliers.find(s => s.id == supplierId);
+    
+    // Update product
+    products[productIndex] = {
+        ...products[productIndex],
+        name: name,
+        category: category,
+        price: price,
+        costPrice: costPrice || 0,
+        stock: stock,
+        unit: unit,
+        barcode: barcode || '',
+        supplierId: supplierId ? parseInt(supplierId) : null,
+        supplierName: supplier ? supplier.name : null,
+        expiryDate: expiry || null,
+        location: location || 'Unknown'
+    };
+    
+    // Close modal and refresh display
+    closeModal('editProductModal');
+    displayInventory();
+    displayProducts();
+    saveData();
+    
+    alert('Product updated successfully!');
 }
 
 function editUser(userId) {
     const user = users.find(u => u.id === userId);
-    if (!user) return;
+    if (!user) {
+        alert('User not found!');
+        return;
+    }
     
-    alert('Edit user functionality will be implemented in the next version.');
+    // Fill form with user data
+    document.getElementById('editUserId').value = user.id;
+    document.getElementById('editUserUsername').value = user.username;
+    document.getElementById('editUserName').value = user.name;
+    document.getElementById('editUserRole').value = user.role;
+    document.getElementById('editUserEmail').value = user.email || '';
+    document.getElementById('editUserPhone').value = user.phone || '';
+    
+    // Show modal
+    document.getElementById('editUserModal').style.display = 'block';
+}
+
+function updateUser() {
+    const id = parseInt(document.getElementById('editUserId').value);
+    const username = document.getElementById('editUserUsername').value;
+    const name = document.getElementById('editUserName').value;
+    const role = document.getElementById('editUserRole').value;
+    const email = document.getElementById('editUserEmail').value;
+    const phone = document.getElementById('editUserPhone').value;
+    
+    if (!username || !name) {
+        alert('Please fill in username and name');
+        return;
+    }
+    
+    const userIndex = users.findIndex(u => u.id == id);
+    if (userIndex === -1) {
+        alert('User not found!');
+        return;
+    }
+    
+    // Check if username already exists (excluding current user)
+    const existingUser = users.find(u => u.username === username && u.id !== id);
+    if (existingUser) {
+        alert('Username already exists');
+        return;
+    }
+    
+    // Set permissions based on role
+    const permissions = {
+        pos: true,
+        inventory: role === 'owner',
+        customers: true,
+        reports: role === 'owner',
+        settings: role === 'owner',
+        suppliers: role === 'owner',
+        users: role === 'owner',
+        finance: role === 'owner'
+    };
+    
+    // Update user
+    users[userIndex] = {
+        ...users[userIndex],
+        username: username,
+        name: name,
+        role: role,
+        email: email,
+        phone: phone,
+        permissions: permissions
+    };
+    
+    // Close modal and refresh display
+    closeModal('editUserModal');
+    displayUsers();
+    saveData();
+    
+    alert('User updated successfully!');
 }
 
 // User Management
