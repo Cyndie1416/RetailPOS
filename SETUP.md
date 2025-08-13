@@ -7,6 +7,8 @@
 - ✅ Works offline (no internet needed)
 - ✅ JSON-based data storage
 - ✅ Responsive design (works on phone, tablet, computer)
+- ✅ Automatic data persistence (localStorage)
+- ✅ Backup system (JSON file downloads)
 
 ### **Files Created:**
 1. `index.html` - Main POS interface
@@ -14,19 +16,60 @@
 3. `script.js` - All functionality
 4. `README.md` - User guide
 5. `SETUP.md` - This setup guide
+6. `server.html` - Server status page
+7. `test.html` - System test page
+8. `data/` folder - JSON data files
 
-## 🎯 **STEP 2: Open Your POS System**
+## 🎯 **STEP 2: Choose Your Setup Method**
 
-### **Method 1: Double-click (Easiest)**
-1. Find the `index.html` file in your folder
-2. Double-click on it
-3. It will open in your default web browser
-4. Your POS system is ready to use! 🎉
+### **Method A: Local Development (Recommended)**
+**Best for:** Testing, development, single-user setup
 
-### **Method 2: Right-click and Open**
-1. Right-click on `index.html`
-2. Select "Open with" → Choose your browser
-3. Your POS system will load
+1. **Open directly in browser:**
+   - Double-click `index.html`
+   - Or right-click → "Open with" → Choose browser
+
+2. **Use local server (Optional but recommended):**
+   ```bash
+   # Using Python (if installed)
+   python -m http.server 8000
+   
+   # Using Node.js (if installed)
+   npx http-server
+   
+   # Using PHP (if installed)
+   php -S localhost:8000
+   ```
+
+3. **Access via:** `http://localhost:8000`
+
+### **Method B: Production Server**
+**Best for:** Multi-user, business deployment
+
+1. **Upload files to web server:**
+   - Upload all files to your web hosting
+   - Ensure `data/` folder is writable
+   - Set proper file permissions
+
+2. **Configure server:**
+   - Enable CORS if needed
+   - Set up HTTPS for security
+   - Configure backup system
+
+3. **Access via:** Your domain name
+
+### **Method C: Network Deployment**
+**Best for:** Local network, multiple devices
+
+1. **Set up network server:**
+   ```bash
+   # Using Python
+   python -m http.server 8000 --bind 0.0.0.0
+   ```
+
+2. **Access from other devices:**
+   - `http://[YOUR_COMPUTER_IP]:8000`
+   - All devices on same network can access
 
 ## 🛒 **STEP 3: Test the Features**
 
@@ -66,15 +109,17 @@
 ## 💾 **STEP 5: Data Management**
 
 ### **Your Data is Safe:**
-- ✅ All data stored locally on your device
-- ✅ No internet required
-- ✅ Automatic backups
+- ✅ All data stored locally on your device (localStorage)
+- ✅ No internet required for operation
+- ✅ Automatic backups to JSON files
 - ✅ Export/import functionality
+- ✅ Data persists between sessions
 
 ### **Backup Your Data:**
 1. Go to Settings tab
 2. Click "Export Data" to download backup
-3. Keep backup files safe
+3. Click "Backup Data" for automatic backup
+4. Keep backup files safe
 
 ## 🔧 **STEP 6: Customize for Your Store**
 
@@ -95,6 +140,31 @@
 3. Fill in customer details
 4. Save customer
 
+## 🚨 **Troubleshooting**
+
+### **Common Issues:**
+
+**Q: Data not saving?**
+A: Check browser localStorage support. Try different browser.
+
+**Q: Can't access from other devices?**
+A: Ensure server is running with `--bind 0.0.0.0` flag.
+
+**Q: Files not loading?**
+A: Use a local server instead of file:// protocol.
+
+**Q: Login not working?**
+A: Check `data/users.json` file exists and is valid JSON.
+
+**Q: Reports empty?**
+A: Process some sales first, or check `data/sales.json` file.
+
+### **Server Requirements:**
+- **Minimum:** Any web server (Apache, Nginx, etc.)
+- **Recommended:** HTTPS enabled
+- **Storage:** At least 100MB free space
+- **Memory:** 512MB RAM minimum
+
 ## 🎉 **CONGRATULATIONS!**
 
 ### **Your POS System is Ready!**
@@ -103,6 +173,8 @@
 - ✅ All features included
 - ✅ Beautiful interface
 - ✅ Easy to use
+- ✅ Data persistence
+- ✅ Automatic backups
 
 ### **What You Can Do Now:**
 1. **Start selling** - Use the POS Sales tab
@@ -118,6 +190,7 @@
 - **Q: How do I track utang?** A: Go to Customers tab → Add Customer → Add Utang
 - **Q: How do I print receipts?** A: Add items to cart → Receipt button
 - **Q: How do I backup data?** A: Go to Settings tab → Export Data
+- **Q: How do I deploy to server?** A: Upload files to web hosting, ensure data/ folder is writable
 
 ### **Features Included:**
 - ✅ Sales management
@@ -129,6 +202,8 @@
 - ✅ Data backup/restore
 - ✅ Responsive design
 - ✅ Offline functionality
+- ✅ Multi-device support
+- ✅ Automatic data persistence
 
 ---
 

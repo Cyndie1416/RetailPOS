@@ -4,67 +4,93 @@
 
 When you make any changes in the POS system (add products, process sales, add customers, etc.), the system will **automatically**:
 
-1. **Save all data** to your computer
-2. **Download JSON files** to your Downloads folder
+1. **Save all data** to your browser's localStorage
+2. **Download JSON files** to your Downloads folder as backup
 3. **Show a green notification** confirming the save
+4. **Persist data** between sessions automatically
 
-## 📁 **Files That Get Saved Automatically**
+## 📁 **Data Storage Methods**
 
-Every time you make changes, these files are downloaded:
-- `products.json` - Your product inventory
-- `customers.json` - Customer database
-- `sales.json` - Sales transactions
-- `settings.json` - Store settings
-- `suppliers.json` - Supplier information
-- `orders.json` - Purchase orders
-- `users.json` - User accounts
+### **Primary Storage: localStorage**
+- ✅ **Automatic persistence** - Data survives browser restarts
+- ✅ **No manual work** - Everything saves automatically
+- ✅ **Fast access** - Data loads instantly
+- ✅ **Reliable** - No file management needed
+
+### **Backup Storage: JSON Files**
+- ✅ **Manual backup** - Downloaded to Downloads folder
+- ✅ **Portable** - Can be moved to other devices
+- ✅ **Human readable** - Can be edited manually if needed
+- ✅ **Version control** - Multiple backup versions available
 
 ## 🎯 **When Auto-Save Happens**
 
 The system automatically saves when you:
 - ✅ **Login** to the system
+- ✅ **Logout** from the system
 - ✅ **Add/Edit products** in Inventory
 - ✅ **Process sales** in POS
 - ✅ **Add/Edit customers** in Customers
 - ✅ **Add/Edit suppliers** in Suppliers
 - ✅ **Add/Edit users** in Users
 - ✅ **Change settings** in Settings
+- ✅ **Every 5 minutes** while logged in (auto-save)
 - ✅ **Click "Backup Data"** button
 
-## 📂 **Where Files Are Saved**
+## 📂 **Where Data is Stored**
 
-All JSON files are automatically downloaded to your **Downloads folder**:
-- Windows: `C:\Users\[YourName]\Downloads\`
-- The files will have the exact same names as in your `data/` folder
+### **Primary Location: Browser localStorage**
+- **Automatic** - No user action required
+- **Persistent** - Survives browser restarts
+- **Fast** - Instant loading and saving
 
-## 🔄 **How to Update Your Data Folder**
+### **Backup Location: Downloads folder**
+- **Automatic downloads** - JSON files saved as backup
+- **File names** - Same as in your `data/` folder
+- **Location** - Your browser's default Downloads folder
 
-1. **Check your Downloads folder** for the new JSON files
-2. **Copy the files** from Downloads to your `data/` folder
-3. **Replace the old files** with the new ones
-4. **Refresh the POS system** to see your changes
+## 🔄 **Data Recovery & Backup**
+
+### **Automatic Recovery:**
+1. **Open the POS system** in your browser
+2. **Data loads automatically** from localStorage
+3. **No manual work** required
+
+### **Manual Backup:**
+1. **Go to Settings tab**
+2. **Click "Export Data"** for manual backup
+3. **Click "Backup Data"** for automatic backup
+4. **Files download** to your Downloads folder
+
+### **Restore from Backup:**
+1. **Go to Settings tab**
+2. **Click "Import Data"**
+3. **Select your backup file**
+4. **Data restores automatically**
 
 ## 💡 **Pro Tips**
 
-- **Keep your Downloads folder organized** - the files will accumulate there
-- **Regularly move files** from Downloads to your `data/` folder
-- **Use the "Backup Data" button** in Settings for manual backups
-- **The green notification** confirms your data was saved successfully
+- **No manual file management** - localStorage handles everything
+- **Regular backups** - Use the backup buttons in Settings
+- **Multiple devices** - Export/import for device switching
+- **Data safety** - Both localStorage and file backups
 
 ## 🚨 **Important Notes**
 
-- **No more manual copy-paste** required!
-- **No more popup windows** with JSON content
-- **Automatic saving** happens in the background
-- **Files are downloaded** to your Downloads folder automatically
+- **localStorage is primary** - Data persists automatically
+- **JSON files are backup** - Downloaded for safety
+- **No manual copy-paste** required
+- **No file management** needed for normal use
+- **Cross-browser** - Data stays in the same browser
 
 ## 🎉 **Benefits**
 
-- ✅ **Faster workflow** - no interruptions
-- ✅ **No manual work** - everything is automatic
-- ✅ **Reliable saving** - data is always backed up
-- ✅ **Easy to manage** - files go to Downloads folder
+- ✅ **Zero maintenance** - Everything is automatic
+- ✅ **No data loss** - Multiple backup methods
+- ✅ **Fast performance** - localStorage is instant
+- ✅ **Reliable** - Survives browser crashes
+- ✅ **Portable** - Export/import for device switching
 
 ---
 
-**Your POS system now saves automatically! Just use it normally and your data will be preserved.**
+**Your POS system now saves automatically! Data persists between sessions and is backed up regularly.**

@@ -12,16 +12,74 @@ let users = [];
 let currentUser = null;
 let cart = [];
 
+// Utility functions for data validation and generation
+function generateUniqueId() {
+    return Date.now() + Math.random().toString(36).substr(2, 9);
+}
+
+function validateNumericInput(value, min = 0, max = Infinity) {
+    const num = parseFloat(value);
+    if (isNaN(num) || num < min || num > max) {
+        return null;
+    }
+    return num;
+}
+
+function sanitizeStringInput(input) {
+    if (typeof input !== 'string') return '';
+    return input.trim().replace(/[<>]/g, ''); // Basic XSS prevention
+}
+
+function validateRequiredField(value, fieldName) {
+    if (!value || value.trim() === '') {
+        alert(`${fieldName} is required`);
+        return false;
+    }
+    return true;
+}
+
+function validateEmail(email) {
+    if (!email) return true; // Email is optional
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+}
+
+function validatePhone(phone) {
+    if (!phone) return false;
+    const phoneRegex = /^[\+]?[0-9\s\-\(\)]{10,}$/;
+    return phoneRegex.test(phone);
+}
+
 // Initialize the application
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
     console.log('DOM loaded, starting application...');
-    loadData();
+    await loadData();
     console.log('Data loading completed');
     console.log('Users loaded:', users);
     setupEventListeners();
     
+    // Update store name display after data is loaded
+    updateStoreNameDisplayOnly();
+    
+    // Perform system health check
+    const healthReport = performSystemHealthCheck();
+    if (healthReport.status === 'error') {
+        console.error('System health check failed:', healthReport.issues);
+        alert('System health check failed. Please check the console for details.');
+    } else if (healthReport.status === 'warning') {
+        console.warn('System health check warnings:', healthReport.warnings);
+    }
+    
     // Check for existing session
     checkExistingSession();
+    
+    // Set up auto-save every 5 minutes
+    setInterval(() => {
+        if (currentUser) {
+            console.log('Auto-saving data...');
+            saveData();
+        }
+    }, 5 * 60 * 1000); // 5 minutes
 });
 
 // Check for existing login session
@@ -60,6 +118,9 @@ function checkExistingSession() {
                     displayUsers();
                     displayReports();
                     loadSettings();
+                    
+                    // Update store name display
+                    updateStoreNameDisplayOnly();
                     
                     // Start session timeout
                     startSessionTimeout();
@@ -152,10 +213,91 @@ setInterval(() => {
 
 // Setup event listeners
 function setupEventListeners() {
-    // Login form submission
+    // Enter key for login
     document.getElementById('loginPassword').addEventListener('keypress', function(e) {
         if (e.key === 'Enter') {
             login();
+        }
+    });
+    
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        // Only apply shortcuts when not in input fields
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+            return;
+        }
+        
+        // Ctrl/Cmd + S for save
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            saveData();
+            showNotification('Data saved successfully!', 'success');
+        }
+        
+        // Ctrl/Cmd + F for search
+        if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+            e.preventDefault();
+            const activeTab = document.querySelector('.tab.active');
+            if (activeTab && activeTab.textContent.includes('Inventory')) {
+                document.getElementById('inventorySearchName').focus();
+            } else if (activeTab && activeTab.textContent.includes('POS')) {
+                document.getElementById('searchProduct').focus();
+            }
+        }
+        
+        // Escape key to close modals
+        if (e.key === 'Escape') {
+            const modals = document.querySelectorAll('[id$="Modal"]');
+            modals.forEach(modal => {
+                if (modal.style.display === 'block') {
+                    closeModal(modal.id);
+                }
+            });
+        }
+        
+        // Number keys for quick tab switching
+        if (e.key >= '1' && e.key <= '7' && !e.ctrlKey && !e.metaKey) {
+            const tabIndex = parseInt(e.key) - 1;
+            const tabs = ['pos', 'inventory', 'customers', 'suppliers', 'reports', 'users', 'settings'];
+            if (tabs[tabIndex]) {
+                showTab(tabs[tabIndex]);
+            }
+        }
+    });
+    
+    // Auto-save on form changes
+    const forms = document.querySelectorAll('input, select, textarea');
+    forms.forEach(form => {
+        form.addEventListener('change', function() {
+            // Auto-save after a short delay
+            setTimeout(() => {
+                if (currentUser) {
+                    saveData();
+                }
+            }, 1000);
+        });
+    });
+    
+    // Real-time search for products
+    const searchProductInput = document.getElementById('searchProduct');
+    if (searchProductInput) {
+        searchProductInput.addEventListener('input', function() {
+            searchProducts();
+        });
+    }
+    
+    // Real-time search for inventory
+    const inventorySearchInputs = [
+        document.getElementById('inventorySearchName'),
+        document.getElementById('inventorySearchBarcode'),
+        document.getElementById('inventoryCategoryFilter')
+    ];
+    
+    inventorySearchInputs.forEach(input => {
+        if (input) {
+            input.addEventListener('input', function() {
+                searchInventory();
+            });
         }
     });
 }
@@ -213,6 +355,9 @@ async function login() {
             displayReports();
             loadSettings();
             
+            // Update store name display
+            updateStoreNameDisplayOnly();
+            
         } else if (user && user.status !== 'active') {
             alert(`User account is ${user.status}. Please contact administrator.`);
         } else {
@@ -226,6 +371,9 @@ async function login() {
 
 // Logout function
 function logout() {
+    // Save data before logging out
+    saveData();
+    
     currentUser = null;
     cart = [];
     
@@ -267,14 +415,127 @@ function updateUserPermissions() {
     if (usersBtn) usersBtn.style.display = permissions.users ? 'inline-block' : 'none';
 }
 
-// Data Management Functions - No file fetching needed
-function loadData() {
-    console.log('Loading sample data...');
-    loadSampleData(); // Always load sample data for now
+// Data Management Functions
+async function loadData() {
+    console.log('Loading data from JSON files...');
+    try {
+        await loadDataFromJSONFiles();
+        console.log('Data loaded successfully from JSON files');
+    } catch (error) {
+        console.error('Error loading data from JSON files:', error);
+        console.log('Loading sample data as fallback...');
+        loadSampleData();
+    }
+}
+
+async function loadDataFromJSONFiles() {
+    // First, try to load from localStorage (most recent data)
+    try {
+        const localStorageData = localStorage.getItem('sariPOS_data');
+        if (localStorageData) {
+            const data = JSON.parse(localStorageData);
+            console.log('Loading data from localStorage...');
+            
+            if (data.products) products = data.products;
+            if (data.customers) customers = data.customers;
+            if (data.sales) sales = data.sales;
+            if (data.settings) settings = data.settings;
+            if (data.suppliers) suppliers = data.suppliers;
+            if (data.orders) orders = data.orders;
+            if (data.users) users = data.users;
+            
+            console.log('Data loaded from localStorage successfully');
+            return; // Use localStorage data if available
+        }
+    } catch (error) {
+        console.warn('Could not load from localStorage:', error);
+    }
+    
+    // Fallback to loading from JSON files
+    console.log('Loading data from JSON files...');
+    const dataFiles = [
+        'data/products.json',
+        'data/customers.json', 
+        'data/sales.json',
+        'data/settings.json',
+        'data/suppliers.json',
+        'data/orders.json',
+        'data/users.json'
+    ];
+    
+    let filesLoaded = 0;
+    const totalFiles = dataFiles.length;
+    
+    const loadPromises = dataFiles.map(async (filePath) => {
+        try {
+            const response = await fetch(filePath);
+            if (!response.ok) {
+                throw new Error(`Failed to load ${filePath}: ${response.status}`);
+            }
+            const data = await response.json();
+            filesLoaded++;
+            console.log(`Loaded ${filePath} (${filesLoaded}/${totalFiles})`);
+            return { filePath, data };
+        } catch (error) {
+            console.warn(`Could not load ${filePath}:`, error);
+            return { filePath, data: null };
+        }
+    });
+    
+    try {
+        const results = await Promise.all(loadPromises);
+        
+        results.forEach(({ filePath, data }) => {
+            if (data !== null) {
+                if (filePath.includes('products.json')) {
+                    products = data;
+                } else if (filePath.includes('customers.json')) {
+                    customers = data;
+                } else if (filePath.includes('sales.json')) {
+                    sales = data;
+                } else if (filePath.includes('settings.json')) {
+                    settings = data;
+                } else if (filePath.includes('suppliers.json')) {
+                    suppliers = data;
+                } else if (filePath.includes('orders.json')) {
+                    orders = data;
+                } else if (filePath.includes('users.json')) {
+                    users = data;
+                }
+            }
+        });
+        
+        console.log(`Successfully loaded ${filesLoaded}/${totalFiles} data files`);
+        
+        // If no files were loaded, throw error to trigger fallback
+        if (filesLoaded === 0) {
+            throw new Error('No data files could be loaded');
+        }
+        
+    } catch (error) {
+        console.error('Error loading data files:', error);
+        throw error; // Re-throw to trigger fallback
+    }
+    
+    // Ensure arrays are initialized if files are empty or missing
+    if (!Array.isArray(products)) products = [];
+    if (!Array.isArray(customers)) customers = [];
+    if (!Array.isArray(sales)) sales = [];
+    if (!Array.isArray(suppliers)) suppliers = [];
+    if (!Array.isArray(orders)) orders = [];
+    if (!Array.isArray(users)) users = [];
+    if (!settings || typeof settings !== 'object') settings = {};
 }
 
 function saveData() {
     try {
+        // Validate data integrity before saving
+        if (!validateDataIntegrity()) {
+            console.error('Data integrity validation failed');
+            alert('Data validation failed. Please check your inputs.');
+            return;
+        }
+        
         // Automatically save to JSON files
         saveToJSONFiles();
         console.log('Data saved automatically to JSON files');
@@ -284,8 +545,81 @@ function saveData() {
     }
 }
 
+function validateDataIntegrity() {
+    try {
+        // Validate products
+        if (!Array.isArray(products)) return false;
+        for (let product of products) {
+            if (!product.id || !product.name || typeof product.price !== 'number' || product.price < 0) {
+                console.error('Invalid product data:', product);
+                return false;
+            }
+        }
+        
+        // Validate customers
+        if (!Array.isArray(customers)) return false;
+        for (let customer of customers) {
+            if (!customer.id || !customer.name || !customer.phone) {
+                console.error('Invalid customer data:', customer);
+                return false;
+            }
+        }
+        
+        // Validate sales
+        if (!Array.isArray(sales)) return false;
+        for (let sale of sales) {
+            if (!sale.id || !sale.date || !Array.isArray(sale.items) || typeof sale.total !== 'number') {
+                console.error('Invalid sale data:', sale);
+                return false;
+            }
+        }
+        
+        // Validate suppliers
+        if (!Array.isArray(suppliers)) return false;
+        for (let supplier of suppliers) {
+            if (!supplier.id || !supplier.name || !supplier.contactPerson || !supplier.phone) {
+                console.error('Invalid supplier data:', supplier);
+                return false;
+            }
+        }
+        
+        // Validate users
+        if (!Array.isArray(users)) return false;
+        for (let user of users) {
+            if (!user.id || !user.username || !user.name) {
+                console.error('Invalid user data:', user);
+                return false;
+            }
+        }
+        
+        return true;
+    } catch (error) {
+        console.error('Data integrity validation error:', error);
+        return false;
+    }
+}
+
 function saveToJSONFiles() {
-    // Create downloadable files for each data type
+    // Save to localStorage for persistence
+    const dataToSave = {
+        products: products,
+        customers: customers,
+        sales: sales,
+        settings: settings,
+        suppliers: suppliers,
+        orders: orders,
+        users: users,
+        lastSaved: new Date().toISOString()
+    };
+    
+    try {
+        localStorage.setItem('sariPOS_data', JSON.stringify(dataToSave));
+        console.log('Data saved to localStorage');
+    } catch (error) {
+        console.error('Error saving to localStorage:', error);
+    }
+    
+    // Also create downloadable files for backup
     const dataFiles = {
         'products.json': products,
         'customers.json': customers,
@@ -317,24 +651,25 @@ function saveToJSONFiles() {
 }
 
 function showSaveSuccess() {
-    // Create success notification
+    // Create success notification (only show for manual saves, not auto-saves)
     const notification = document.createElement('div');
     notification.style.cssText = `
         position: fixed; top: 20px; right: 20px; 
         background: #27ae60; color: white; padding: 15px 20px; 
         border-radius: 8px; z-index: 2000; font-weight: bold;
         box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        opacity: 0.9;
     `;
-    notification.innerHTML = '✅ Data saved successfully! Files downloaded.';
+    notification.innerHTML = '✅ Data saved successfully!';
     
     document.body.appendChild(notification);
     
-    // Remove notification after 3 seconds
+    // Remove notification after 2 seconds
     setTimeout(() => {
         if (notification.parentNode) {
             notification.parentNode.removeChild(notification);
         }
-    }, 3000);
+    }, 2000);
 }
 
 // Load sample data if files don't exist
@@ -435,6 +770,38 @@ function loadSampleData() {
             costPrice: 28.00,
             condition: "good",
             location: "Shelf D1"
+        },
+        {
+            id: 7,
+            name: "Sprite 330ml",
+            category: "beverages",
+            price: 22.00,
+            stock: 3,
+            unit: "bottle",
+            barcode: "111222333",
+            minStock: 5,
+            supplierId: 1,
+            supplierName: "ABC Distributors",
+            expiryDate: "2024-12-31",
+            costPrice: 18.00,
+            condition: "good",
+            location: "Shelf A3"
+        },
+        {
+            id: 8,
+            name: "Milo Powder",
+            category: "beverages",
+            price: 120.00,
+            stock: 2,
+            unit: "jar",
+            barcode: "444555666",
+            minStock: 3,
+            supplierId: 1,
+            supplierName: "ABC Distributors",
+            expiryDate: "2024-02-15",
+            costPrice: 95.00,
+            condition: "good",
+            location: "Shelf A4"
         }
     ];
     
@@ -463,7 +830,31 @@ function loadSampleData() {
         }
     ];
     
-    sales = [];
+    sales = [
+        {
+            id: 1,
+            date: new Date().toISOString(),
+            items: [
+                { id: 1, name: "Coca Cola 330ml", price: 25.00, quantity: 2 }
+            ],
+            total: 50.00,
+            paymentMethod: "cash",
+            customerId: null,
+            cashierId: 1
+        },
+        {
+            id: 2,
+            date: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), // Yesterday
+            items: [
+                { id: 2, name: "Pepsi 330ml", price: 23.00, quantity: 1 },
+                { id: 3, name: "Chips", price: 15.00, quantity: 3 }
+            ],
+            total: 68.00,
+            paymentMethod: "gcash",
+            customerId: 1,
+            cashierId: 2
+        }
+    ];
     settings = {
         storeName: "Sari-Sari Store",
         storeAddress: "123 Main Street, City",
@@ -679,7 +1070,7 @@ function processPayment(method) {
     
     // Create sale record
     const sale = {
-        id: Date.now(),
+        id: generateUniqueId(),
         date: new Date().toISOString(),
         items: cart.map(item => ({
             productId: item.id,
@@ -690,7 +1081,8 @@ function processPayment(method) {
         })),
         total: total,
         paymentMethod: method,
-        cashier: currentUser ? currentUser.name : 'Unknown'
+        cashier: currentUser ? currentUser.name : 'Unknown',
+        cashierId: currentUser ? currentUser.id : null
     };
     
     sales.push(sale);
@@ -823,26 +1215,39 @@ function showAddProductModal() {
 }
 
 function addProduct() {
-    const name = document.getElementById('newProductName').value;
+    // Get and validate input values
+    const name = sanitizeStringInput(document.getElementById('newProductName').value);
     const category = document.getElementById('newProductCategory').value;
-    const price = parseFloat(document.getElementById('newProductPrice').value);
-    const costPrice = parseFloat(document.getElementById('newProductCostPrice').value);
-    const stock = parseInt(document.getElementById('newProductStock').value);
+    const price = validateNumericInput(document.getElementById('newProductPrice').value, 0.01);
+    const costPrice = validateNumericInput(document.getElementById('newProductCostPrice').value, 0);
+    const stock = validateNumericInput(document.getElementById('newProductStock').value, 0);
     const unit = document.getElementById('newProductUnit').value;
     const expiry = document.getElementById('newProductExpiry').value;
     const supplierId = document.getElementById('newProductSupplier').value;
-    const location = document.getElementById('newProductLocation').value;
-    const barcode = document.getElementById('newProductBarcode').value;
+    const location = sanitizeStringInput(document.getElementById('newProductLocation').value);
+    const barcode = sanitizeStringInput(document.getElementById('newProductBarcode').value);
     
-    if (!name || !price || stock < 0) {
-        alert('Please fill in all required fields');
+    // Validate required fields
+    if (!validateRequiredField(name, 'Product name')) return;
+    if (price === null) {
+        alert('Please enter a valid price (greater than 0)');
+        return;
+    }
+    if (stock === null) {
+        alert('Please enter a valid stock quantity (0 or greater)');
+        return;
+    }
+    
+    // Check for duplicate barcode
+    if (barcode && products.some(p => p.barcode === barcode)) {
+        alert('A product with this barcode already exists');
         return;
     }
     
     const supplier = suppliers.find(s => s.id == supplierId);
     
     const newProduct = {
-        id: Date.now(),
+        id: generateUniqueId(),
         name: name,
         category: category,
         price: price,
@@ -855,7 +1260,9 @@ function addProduct() {
         supplierName: supplier ? supplier.name : null,
         expiryDate: expiry || null,
         condition: 'good',
-        location: location || 'Unknown'
+        location: location || 'Unknown',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
     };
     
     products.push(newProduct);
@@ -889,12 +1296,212 @@ function restockProduct(productId) {
     const product = products.find(p => p.id === productId);
     if (!product) return;
     
-    const quantity = prompt(`Enter restock quantity for ${product.name}:`, '10');
-    if (quantity && !isNaN(quantity)) {
-        product.stock += parseInt(quantity);
-        displayInventory();
-        saveData();
+    // Create restock modal
+    const modal = document.createElement('div');
+    modal.id = 'restockModal';
+    modal.style.cssText = `
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+        background: rgba(0,0,0,0.5); z-index: 1000; 
+        display: flex; align-items: center; justify-content: center;
+    `;
+    
+    modal.innerHTML = `
+        <div style="background: white; padding: 30px; border-radius: 15px; max-width: 400px;">
+            <h3>📦 Restock Product</h3>
+            <p><strong>Product:</strong> ${product.name}</p>
+            <p><strong>Current Stock:</strong> ${product.stock} ${product.unit}</p>
+            <p><strong>Minimum Stock:</strong> ${product.minStock || 0} ${product.unit}</p>
+            
+            <div style="margin: 20px 0;">
+                <label><strong>Restock Quantity:</strong></label>
+                <input type="number" id="restockQuantity" value="${Math.max(10, product.minStock || 5)}" min="1" style="width: 100%; padding: 10px; margin-top: 5px; border: 2px solid #ddd; border-radius: 5px;">
+            </div>
+            
+            <div style="margin: 20px 0;">
+                <label><strong>Cost Price (₱):</strong></label>
+                <input type="number" id="restockCostPrice" value="${product.costPrice || 0}" step="0.01" min="0" style="width: 100%; padding: 10px; margin-top: 5px; border: 2px solid #ddd; border-radius: 5px;">
+            </div>
+            
+            <div style="margin: 20px 0;">
+                <label><strong>Supplier:</strong></label>
+                <select id="restockSupplier" style="width: 100%; padding: 10px; margin-top: 5px; border: 2px solid #ddd; border-radius: 5px;">
+                    <option value="">Select Supplier</option>
+                    ${suppliers.map(s => `<option value="${s.id}" ${s.id === product.supplierId ? 'selected' : ''}>${s.name}</option>`).join('')}
+                </select>
+            </div>
+            
+            <div style="display: flex; gap: 10px; justify-content: center;">
+                <button onclick="confirmRestock(${productId})" class="btn btn-primary">Confirm Restock</button>
+                <button onclick="closeModal('restockModal')" class="btn btn-warning">Cancel</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
+
+function confirmRestock(productId) {
+    const product = products.find(p => p.id === productId);
+    if (!product) return;
+    
+    const quantity = parseInt(document.getElementById('restockQuantity').value);
+    const costPrice = parseFloat(document.getElementById('restockCostPrice').value);
+    const supplierId = document.getElementById('restockSupplier').value;
+    
+    if (!quantity || quantity <= 0) {
+        showNotification('Please enter a valid quantity', 'error');
+        return;
     }
+    
+    // Update product
+    product.stock += quantity;
+    if (costPrice > 0) {
+        product.costPrice = costPrice;
+    }
+    if (supplierId) {
+        product.supplierId = parseInt(supplierId);
+        const supplier = suppliers.find(s => s.id === parseInt(supplierId));
+        if (supplier) {
+            product.supplierName = supplier.name;
+        }
+    }
+    
+    // Add to restock history
+    if (!product.restockHistory) {
+        product.restockHistory = [];
+    }
+    
+    product.restockHistory.push({
+        id: generateUniqueId(),
+        date: new Date().toISOString(),
+        quantity: quantity,
+        costPrice: costPrice,
+        supplierId: supplierId ? parseInt(supplierId) : null,
+        restockedBy: currentUser ? currentUser.name : 'Unknown'
+    });
+    
+    closeModal('restockModal');
+    displayInventory();
+    saveData();
+    
+    showNotification(`Successfully restocked ${quantity} ${product.unit} of ${product.name}`, 'success');
+}
+
+// Bulk operations for inventory
+function showBulkOperationsModal() {
+    const modal = document.createElement('div');
+    modal.id = 'bulkOperationsModal';
+    modal.style.cssText = `
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+        background: rgba(0,0,0,0.5); z-index: 1000; 
+        display: flex; align-items: center; justify-content: center;
+    `;
+    
+    const lowStockProducts = products.filter(p => p.stock <= (p.minStock || 0));
+    const expiringProducts = products.filter(p => {
+        if (!p.expiryDate) return false;
+        const expiryDate = new Date(p.expiryDate);
+        const daysUntilExpiry = Math.ceil((expiryDate - new Date()) / (1000 * 60 * 60 * 24));
+        return daysUntilExpiry <= 30 && daysUntilExpiry >= 0;
+    });
+    
+    modal.innerHTML = `
+        <div style="background: white; padding: 30px; border-radius: 15px; max-width: 600px; max-height: 80vh; overflow-y: auto;">
+            <h3>⚡ Bulk Operations</h3>
+            
+            <div style="margin: 20px 0;">
+                <h4>📦 Low Stock Items (${lowStockProducts.length})</h4>
+                ${lowStockProducts.length > 0 ? `
+                    <div style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; border-radius: 5px;">
+                        ${lowStockProducts.map(product => `
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid #eee;">
+                                <span>${product.name}</span>
+                                <span style="color: #e74c3c;">${product.stock} ${product.unit}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <button onclick="bulkRestockLowStock()" class="btn btn-primary" style="margin-top: 10px;">Restock All Low Stock Items</button>
+                ` : '<p>No low stock items</p>'}
+            </div>
+            
+            <div style="margin: 20px 0;">
+                <h4>⚠️ Expiring Soon (${expiringProducts.length})</h4>
+                ${expiringProducts.length > 0 ? `
+                    <div style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; border-radius: 5px;">
+                        ${expiringProducts.map(product => {
+                            const expiryDate = new Date(product.expiryDate);
+                            const daysUntilExpiry = Math.ceil((expiryDate - new Date()) / (1000 * 60 * 60 * 24));
+                            return `
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid #eee;">
+                                    <span>${product.name}</span>
+                                    <span style="color: #f39c12;">Expires in ${daysUntilExpiry} days</span>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                    <button onclick="bulkDiscountExpiring()" class="btn btn-warning" style="margin-top: 10px;">Apply Discount to Expiring Items</button>
+                ` : '<p>No items expiring soon</p>'}
+            </div>
+            
+            <div style="text-align: center; margin-top: 20px;">
+                <button onclick="closeModal('bulkOperationsModal')" class="btn btn-primary">Close</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
+
+function bulkRestockLowStock() {
+    const lowStockProducts = products.filter(p => p.stock <= (p.minStock || 0));
+    
+    lowStockProducts.forEach(product => {
+        const restockQuantity = Math.max(10, (product.minStock || 5) * 2);
+        product.stock += restockQuantity;
+        
+        // Add to restock history
+        if (!product.restockHistory) {
+            product.restockHistory = [];
+        }
+        
+        product.restockHistory.push({
+            id: generateUniqueId(),
+            date: new Date().toISOString(),
+            quantity: restockQuantity,
+            costPrice: product.costPrice || 0,
+            supplierId: product.supplierId,
+            restockedBy: currentUser ? currentUser.name : 'Bulk Operation'
+        });
+    });
+    
+    closeModal('bulkOperationsModal');
+    displayInventory();
+    saveData();
+    
+    showNotification(`Bulk restocked ${lowStockProducts.length} items`, 'success');
+}
+
+function bulkDiscountExpiring() {
+    const expiringProducts = products.filter(p => {
+        if (!p.expiryDate) return false;
+        const expiryDate = new Date(p.expiryDate);
+        const daysUntilExpiry = Math.ceil((expiryDate - new Date()) / (1000 * 60 * 60 * 24));
+        return daysUntilExpiry <= 30 && daysUntilExpiry >= 0;
+    });
+    
+    expiringProducts.forEach(product => {
+        // Apply 20% discount to expiring items
+        const originalPrice = product.originalPrice || product.price;
+        product.originalPrice = originalPrice;
+        product.price = originalPrice * 0.8; // 20% discount
+    });
+    
+    closeModal('bulkOperationsModal');
+    displayInventory();
+    displayProducts();
+    saveData();
+    
+    showNotification(`Applied discount to ${expiringProducts.length} expiring items`, 'success');
 }
 
 // Customer Management
@@ -927,28 +1534,40 @@ function showAddCustomerModal() {
 }
 
 function addCustomer() {
-    const name = document.getElementById('newCustomerName').value;
-    const phone = document.getElementById('newCustomerPhone').value;
-    const address = document.getElementById('newCustomerAddress').value;
-    const creditLimit = parseFloat(document.getElementById('newCustomerCreditLimit').value) || 0;
+    // Get and validate input values
+    const name = sanitizeStringInput(document.getElementById('newCustomerName').value);
+    const phone = sanitizeStringInput(document.getElementById('newCustomerPhone').value);
+    const address = sanitizeStringInput(document.getElementById('newCustomerAddress').value);
+    const creditLimit = validateNumericInput(document.getElementById('newCustomerCreditLimit').value, 0);
     const smsEnabled = document.getElementById('newCustomerSmsEnabled').checked;
     
-    if (!name || !phone) {
-        alert('Please fill in name and phone number');
+    // Validate required fields
+    if (!validateRequiredField(name, 'Customer name')) return;
+    if (!validateRequiredField(phone, 'Phone number')) return;
+    
+    // Validate phone number format
+    if (!validatePhone(phone)) {
+        alert('Please enter a valid phone number');
+        return;
+    }
+    
+    // Check for duplicate phone number
+    if (customers.some(c => c.phone === phone)) {
+        alert('A customer with this phone number already exists');
         return;
     }
     
     const newCustomer = {
-        id: Date.now(),
+        id: generateUniqueId(),
         name: name,
         phone: phone,
-        address: address,
+        address: address || '',
         location: {
             latitude: 0,
             longitude: 0,
             googleMapsUrl: ""
         },
-        creditLimit: creditLimit,
+        creditLimit: creditLimit || 0,
         utang: 0,
         itemsToReturn: [],
         smsEnabled: smsEnabled,
@@ -987,13 +1606,14 @@ function addUtang(customerId) {
     if (!customer) return;
     
     const amount = prompt(`Enter utang amount for ${customer.name}:`, '0');
-    if (amount && !isNaN(amount)) {
-        const utangAmount = parseFloat(amount);
+    const utangAmount = validateNumericInput(amount, 0.01);
+    
+    if (utangAmount !== null) {
         customer.utang += utangAmount;
         
         // Add to utang history
         const utangRecord = {
-            id: Date.now(),
+            id: generateUniqueId(),
             date: new Date().toISOString(),
             items: [],
             amount: utangAmount,
@@ -1005,6 +1625,8 @@ function addUtang(customerId) {
         customer.utangHistory.push(utangRecord);
         displayCustomers();
         saveData();
+    } else {
+        alert('Please enter a valid amount');
     }
 }
 
@@ -1013,12 +1635,14 @@ function recordPayment(customerId) {
     if (!customer) return;
     
     const amount = prompt(`Enter payment amount for ${customer.name} (Current utang: ₱${customer.utang.toFixed(2)}):`, '0');
-    if (amount && !isNaN(amount)) {
-        const paymentAmount = parseFloat(amount);
+    const paymentAmount = validateNumericInput(amount, 0.01);
+    
+    if (paymentAmount !== null) {
         customer.utang = Math.max(0, customer.utang - paymentAmount);
         
         // Add to payment history
         const paymentRecord = {
+            id: generateUniqueId(),
             date: new Date().toISOString(),
             amount: paymentAmount,
             method: 'cash',
@@ -1028,6 +1652,8 @@ function recordPayment(customerId) {
         customer.paymentHistory.push(paymentRecord);
         displayCustomers();
         saveData();
+    } else {
+        alert('Please enter a valid amount');
     }
 }
 
@@ -1060,20 +1686,39 @@ function showAddSupplierModal() {
 }
 
 function addSupplier() {
-    const name = document.getElementById('newSupplierName').value;
-    const contact = document.getElementById('newSupplierContact').value;
-    const phone = document.getElementById('newSupplierPhone').value;
-    const email = document.getElementById('newSupplierEmail').value;
-    const address = document.getElementById('newSupplierAddress').value;
-    const paymentTerms = document.getElementById('newSupplierPaymentTerms').value;
+    // Get and validate input values
+    const name = sanitizeStringInput(document.getElementById('newSupplierName').value);
+    const contact = sanitizeStringInput(document.getElementById('newSupplierContact').value);
+    const phone = sanitizeStringInput(document.getElementById('newSupplierPhone').value);
+    const email = sanitizeStringInput(document.getElementById('newSupplierEmail').value);
+    const address = sanitizeStringInput(document.getElementById('newSupplierAddress').value);
+    const paymentTerms = sanitizeStringInput(document.getElementById('newSupplierPaymentTerms').value);
     
-    if (!name || !contact || !phone) {
-        alert('Please fill in supplier name, contact person, and phone number');
+    // Validate required fields
+    if (!validateRequiredField(name, 'Supplier name')) return;
+    if (!validateRequiredField(contact, 'Contact person')) return;
+    if (!validateRequiredField(phone, 'Phone number')) return;
+    
+    // Validate phone number format
+    if (!validatePhone(phone)) {
+        alert('Please enter a valid phone number');
+        return;
+    }
+    
+    // Validate email format if provided
+    if (email && !validateEmail(email)) {
+        alert('Please enter a valid email address');
+        return;
+    }
+    
+    // Check for duplicate supplier name
+    if (suppliers.some(s => s.name.toLowerCase() === name.toLowerCase())) {
+        alert('A supplier with this name already exists');
         return;
     }
     
     const newSupplier = {
-        id: Date.now(),
+        id: generateUniqueId(),
         name: name,
         contactPerson: contact,
         phone: phone,
@@ -1082,7 +1727,9 @@ function addSupplier() {
         products: [],
         paymentTerms: paymentTerms || 'Net 30',
         lastOrder: null,
-        status: 'active'
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
     };
     
     suppliers.push(newSupplier);
@@ -1123,22 +1770,25 @@ function createOrder(supplierId) {
     
     // Create order
     const order = {
-        id: Date.now(),
+        id: generateUniqueId(),
         supplierId: supplierId,
         supplierName: supplier.name,
         date: new Date().toISOString(),
         items: lowStockProducts.map(product => ({
+            productId: product.id,
             productName: product.name,
             quantity: product.minStock * 2, // Order 2x minimum stock
-            unitPrice: product.costPrice,
-            totalPrice: product.costPrice * (product.minStock * 2)
+            unitPrice: product.costPrice || 0,
+            totalPrice: (product.costPrice || 0) * (product.minStock * 2)
         })),
         totalAmount: lowStockProducts.reduce((sum, product) => 
-            sum + (product.costPrice * (product.minStock * 2)), 0
+            sum + ((product.costPrice || 0) * (product.minStock * 2)), 0
         ),
         status: 'pending',
         deliveryDate: null,
-        notes: 'Auto-generated order for low stock items'
+        notes: 'Auto-generated order for low stock items',
+        createdBy: currentUser ? currentUser.name : 'System',
+        createdAt: new Date().toISOString()
     };
     
     orders.push(order);
@@ -1156,7 +1806,84 @@ function viewSupplierDetails(supplierId) {
     const supplier = suppliers.find(s => s.id === supplierId);
     if (!supplier) return;
     
-    alert(`Supplier Details:\n\nName: ${supplier.name}\nContact: ${supplier.contactPerson}\nPhone: ${supplier.phone}\nEmail: ${supplier.email}\nAddress: ${supplier.address}\nPayment Terms: ${supplier.paymentTerms}\nLast Order: ${supplier.lastOrder || 'Never'}`);
+    // Get supplier's products and orders
+    const supplierProducts = products.filter(p => p.supplierId === supplierId);
+    const supplierOrders = orders.filter(o => o.supplierId === supplierId);
+    
+    // Create detailed supplier view modal
+    const modal = document.createElement('div');
+    modal.id = 'supplierDetailsModal';
+    modal.style.cssText = `
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+        background: rgba(0,0,0,0.5); z-index: 1000; 
+        display: flex; align-items: center; justify-content: center;
+    `;
+    
+    modal.innerHTML = `
+        <div style="background: white; padding: 30px; border-radius: 15px; max-width: 700px; max-height: 80vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2>🚚 Supplier Details</h2>
+                <button onclick="closeModal('supplierDetailsModal')" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">×</button>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                <div>
+                    <h3>Contact Information</h3>
+                    <p><strong>Name:</strong> ${supplier.name}</p>
+                    <p><strong>Contact Person:</strong> ${supplier.contactPerson}</p>
+                    <p><strong>Phone:</strong> ${supplier.phone}</p>
+                    <p><strong>Email:</strong> ${supplier.email || 'Not provided'}</p>
+                    <p><strong>Address:</strong> ${supplier.address || 'Not provided'}</p>
+                </div>
+                
+                <div>
+                    <h3>Business Information</h3>
+                    <p><strong>Payment Terms:</strong> ${supplier.paymentTerms || 'Not specified'}</p>
+                    <p><strong>Status:</strong> <span style="color: ${supplier.status === 'active' ? '#27ae60' : '#e74c3c'};">${supplier.status}</span></p>
+                    <p><strong>Last Order:</strong> ${supplier.lastOrder ? new Date(supplier.lastOrder).toLocaleDateString() : 'Never'}</p>
+                    <p><strong>Products Supplied:</strong> ${supplierProducts.length} items</p>
+                    <p><strong>Total Orders:</strong> ${supplierOrders.length}</p>
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+                <h3>Products Supplied (${supplierProducts.length})</h3>
+                ${supplierProducts.length > 0 ? `
+                    <div style="max-height: 200px; overflow-y: auto;">
+                        ${supplierProducts.map(product => `
+                            <div style="border: 1px solid #ddd; padding: 10px; margin: 5px 0; border-radius: 5px;">
+                                <p><strong>${product.name}</strong></p>
+                                <p>Price: ₱${product.price.toFixed(2)} | Stock: ${product.stock} ${product.unit}</p>
+                                <p>Status: <span style="color: ${product.stock <= (product.minStock || 0) ? '#e74c3c' : '#27ae60'};">${product.stock <= (product.minStock || 0) ? 'Low Stock' : 'In Stock'}</span></p>
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : '<p>No products from this supplier</p>'}
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+                <h3>Recent Orders (${supplierOrders.length})</h3>
+                ${supplierOrders.length > 0 ? `
+                    <div style="max-height: 200px; overflow-y: auto;">
+                        ${supplierOrders.slice(-5).reverse().map(order => `
+                            <div style="border: 1px solid #ddd; padding: 10px; margin: 5px 0; border-radius: 5px;">
+                                <p><strong>Order Date:</strong> ${new Date(order.date).toLocaleDateString()}</p>
+                                <p><strong>Total Amount:</strong> ₱${order.totalAmount.toFixed(2)}</p>
+                                <p><strong>Status:</strong> <span style="color: ${order.status === 'pending' ? '#f39c12' : order.status === 'delivered' ? '#27ae60' : '#e74c3c'};">${order.status}</span></p>
+                                <p><strong>Items:</strong> ${order.items.length} products</p>
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : '<p>No orders from this supplier</p>'}
+            </div>
+            
+            <div style="text-align: center;">
+                <button onclick="closeModal('supplierDetailsModal')" class="btn btn-primary">Close</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
 }
 
 function editSupplier(supplierId) {
@@ -1278,7 +2005,84 @@ function viewCustomerDetails(customerId) {
     const customer = customers.find(c => c.id === customerId);
     if (!customer) return;
     
-    alert(`Customer Details:\n\nName: ${customer.name}\nPhone: ${customer.phone}\nAddress: ${customer.address}\nUtang: ₱${customer.utang.toFixed(2)}\nItems to Return: ${customer.itemsToReturn.join(', ') || 'None'}\nLast Visit: ${new Date(customer.lastVisit).toLocaleDateString()}`);
+    // Create detailed customer view modal
+    const modal = document.createElement('div');
+    modal.id = 'customerDetailsModal';
+    modal.style.cssText = `
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+        background: rgba(0,0,0,0.5); z-index: 1000; 
+        display: flex; align-items: center; justify-content: center;
+    `;
+    
+    const utangHistory = customer.utangHistory || [];
+    const paymentHistory = customer.paymentHistory || [];
+    
+    modal.innerHTML = `
+        <div style="background: white; padding: 30px; border-radius: 15px; max-width: 600px; max-height: 80vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2>👤 Customer Details</h2>
+                <button onclick="closeModal('customerDetailsModal')" style="background: none; border: none; font-size: 1.5rem; cursor: pointer;">×</button>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                <div>
+                    <h3>Basic Information</h3>
+                    <p><strong>Name:</strong> ${customer.name}</p>
+                    <p><strong>Phone:</strong> ${customer.phone}</p>
+                    <p><strong>Address:</strong> ${customer.address || 'Not provided'}</p>
+                    <p><strong>Customer Type:</strong> ${customer.customerType || 'Regular'}</p>
+                    <p><strong>Status:</strong> <span style="color: ${customer.status === 'active' ? '#27ae60' : '#e74c3c'};">${customer.status}</span></p>
+                </div>
+                
+                <div>
+                    <h3>Financial Information</h3>
+                    <p><strong>Current Utang:</strong> <span style="color: ${customer.utang > 0 ? '#e74c3c' : '#27ae60'}; font-weight: bold;">₱${customer.utang.toFixed(2)}</span></p>
+                    <p><strong>Credit Limit:</strong> ₱${(customer.creditLimit || 0).toFixed(2)}</p>
+                    <p><strong>Items to Return:</strong> ${customer.itemsToReturn.join(', ') || 'None'}</p>
+                    <p><strong>Last Visit:</strong> ${new Date(customer.lastVisit).toLocaleDateString()}</p>
+                    <p><strong>SMS Enabled:</strong> ${customer.smsEnabled ? 'Yes' : 'No'}</p>
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+                <h3>Recent Utang History</h3>
+                ${utangHistory.length > 0 ? `
+                    <div style="max-height: 200px; overflow-y: auto;">
+                        ${utangHistory.slice(-5).reverse().map(utang => `
+                            <div style="border: 1px solid #ddd; padding: 10px; margin: 5px 0; border-radius: 5px;">
+                                <p><strong>Date:</strong> ${new Date(utang.date).toLocaleDateString()}</p>
+                                <p><strong>Amount:</strong> ₱${utang.amount.toFixed(2)}</p>
+                                <p><strong>Status:</strong> ${utang.status}</p>
+                                <p><strong>Notes:</strong> ${utang.notes || 'No notes'}</p>
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : '<p>No utang history</p>'}
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+                <h3>Recent Payment History</h3>
+                ${paymentHistory.length > 0 ? `
+                    <div style="max-height: 200px; overflow-y: auto;">
+                        ${paymentHistory.slice(-5).reverse().map(payment => `
+                            <div style="border: 1px solid #ddd; padding: 10px; margin: 5px 0; border-radius: 5px;">
+                                <p><strong>Date:</strong> ${new Date(payment.date).toLocaleDateString()}</p>
+                                <p><strong>Amount:</strong> ₱${payment.amount.toFixed(2)}</p>
+                                <p><strong>Method:</strong> ${payment.method}</p>
+                                <p><strong>Notes:</strong> ${payment.notes || 'No notes'}</p>
+                            </div>
+                        `).join('')}
+                    </div>
+                ` : '<p>No payment history</p>'}
+            </div>
+            
+            <div style="text-align: center;">
+                <button onclick="closeModal('customerDetailsModal')" class="btn btn-primary">Close</button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
 }
 
 function editProduct(productId) {
@@ -1549,10 +2353,10 @@ function displayReports() {
     ).reduce((sum, sale) => sum + sale.total, 0);
     
     // Calculate total utang
-    const totalUtang = customers.reduce((sum, customer) => sum + customer.utang, 0);
+    const totalUtang = customers.reduce((sum, customer) => sum + (customer.utang || 0), 0);
     
     // Count low stock items
-    const lowStockCount = products.filter(product => product.stock <= product.minStock).length;
+    const lowStockCount = products.filter(product => product.stock <= (product.minStock || 0)).length;
     
     // Count expiring items (within 30 days)
     const currentDate = new Date();
@@ -1564,39 +2368,89 @@ function displayReports() {
     }).length;
     
     // Update dashboard
-    document.getElementById('todaySales').textContent = `₱${todaySales.toFixed(2)}`;
-    document.getElementById('totalUtang').textContent = `₱${totalUtang.toFixed(2)}`;
-    document.getElementById('lowStockCount').textContent = lowStockCount;
-    document.getElementById('expiringCount').textContent = expiringCount;
+    const todaySalesElement = document.getElementById('todaySales');
+    const totalUtangElement = document.getElementById('totalUtang');
+    const lowStockCountElement = document.getElementById('lowStockCount');
+    const expiringCountElement = document.getElementById('expiringCount');
+    
+    if (todaySalesElement) todaySalesElement.textContent = `₱${todaySales.toFixed(2)}`;
+    if (totalUtangElement) totalUtangElement.textContent = `₱${totalUtang.toFixed(2)}`;
+    if (lowStockCountElement) lowStockCountElement.textContent = lowStockCount;
+    if (expiringCountElement) expiringCountElement.textContent = expiringCount;
     
     // Display recent sales
     const recentSalesTableBody = document.getElementById('recentSalesTableBody');
-    recentSalesTableBody.innerHTML = '';
-    
-    const recentSales = sales.slice(-10).reverse(); // Last 10 sales
-    recentSales.forEach(sale => {
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td>${new Date(sale.date).toLocaleDateString()}</td>
-            <td>${sale.items.length} items</td>
-            <td>₱${sale.total.toFixed(2)}</td>
-            <td>${sale.paymentMethod.toUpperCase()}</td>
-        `;
-        recentSalesTableBody.appendChild(row);
-    });
+    if (recentSalesTableBody) {
+        recentSalesTableBody.innerHTML = '';
+        
+        const recentSales = sales.slice(-10).reverse(); // Last 10 sales
+        
+        recentSales.forEach(sale => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${new Date(sale.date).toLocaleDateString()}</td>
+                <td>${sale.items.length} items</td>
+                <td>₱${sale.total.toFixed(2)}</td>
+                <td>${sale.paymentMethod.toUpperCase()}</td>
+            `;
+            recentSalesTableBody.appendChild(row);
+        });
+    }
 }
 
 // Settings
+// Function to update store name throughout the application
+function updateStoreNameDisplay() {
+    const storeName = settings.storeName || 'Sari-Sari Store';
+    const fullStoreName = storeName + ' POS';
+    
+    // Update page title
+    const pageTitle = document.getElementById('pageTitle');
+    if (pageTitle) pageTitle.textContent = fullStoreName;
+    
+    // Update login screen title
+    const loginTitle = document.getElementById('loginTitle');
+    if (loginTitle) loginTitle.textContent = '🏪 ' + fullStoreName;
+    
+    // Update main application title
+    const mainTitle = document.getElementById('mainTitle');
+    if (mainTitle) mainTitle.textContent = '🏪 ' + fullStoreName;
+}
+
+// Function to update store name display without affecting input fields
+function updateStoreNameDisplayOnly() {
+    const storeName = settings.storeName || 'Sari-Sari Store';
+    const fullStoreName = storeName + ' POS';
+    
+    // Update page title
+    const pageTitle = document.getElementById('pageTitle');
+    if (pageTitle) pageTitle.textContent = fullStoreName;
+    
+    // Update login screen title
+    const loginTitle = document.getElementById('loginTitle');
+    if (loginTitle) loginTitle.textContent = '🏪 ' + fullStoreName;
+    
+    // Update main application title
+    const mainTitle = document.getElementById('mainTitle');
+    if (mainTitle) mainTitle.textContent = '🏪 ' + fullStoreName;
+}
+
 function loadSettings() {
     document.getElementById('storeName').value = settings.storeName || 'Sari-Sari Store';
     document.getElementById('storeAddress').value = settings.storeAddress || '123 Main Street, City';
     document.getElementById('storePhone').value = settings.storePhone || '+63 912 345 6789';
+    
+    // Update store name display throughout the application (without affecting input fields)
+    updateStoreNameDisplayOnly();
 }
 
 function saveStoreInfo() {
     settings.storeName = document.getElementById('storeName').value;
     settings.storeAddress = document.getElementById('storeAddress').value;
     settings.storePhone = document.getElementById('storePhone').value;
+    
+    // Update store name display throughout the application
+    updateStoreNameDisplay();
     
     saveData();
     alert('Store information saved successfully!');
@@ -1720,7 +2574,7 @@ function clearInventorySearch() {
 function startBarcodeScan() {
     // Check if device has camera
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        alert('Camera access not available. Please enter barcode manually.');
+        showNotification('Camera access not available. Please enter barcode manually.', 'warning');
         document.getElementById('inventorySearchBarcode').focus();
         return;
     }
@@ -1743,9 +2597,12 @@ function startBarcodeScan() {
                 <button class="btn btn-success" onclick="captureBarcode()">📸 Capture</button>
                 <button class="btn btn-warning" onclick="closeBarcodeModal()">❌ Cancel</button>
             </div>
-            <p style="font-size: 0.9rem; color: #666; margin-top: 10px;">
-                Note: For now, please manually enter the barcode number
-            </p>
+            <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 5px;">
+                <p style="font-size: 0.9rem; color: #666; margin: 0;">
+                    <strong>Note:</strong> For now, please manually enter the barcode number. 
+                    Full barcode scanning will be available in future updates.
+                </p>
+            </div>
         </div>
     `;
     
@@ -1756,10 +2613,11 @@ function startBarcodeScan() {
         .then(stream => {
             const video = document.getElementById('barcodeVideo');
             video.srcObject = stream;
+            showNotification('Camera started successfully. Point at barcode.', 'success');
         })
         .catch(err => {
             console.error('Camera error:', err);
-            alert('Camera access denied. Please enter barcode manually.');
+            showNotification('Camera access denied. Please enter barcode manually.', 'error');
             closeBarcodeModal();
         });
 }
@@ -1767,7 +2625,7 @@ function startBarcodeScan() {
 function captureBarcode() {
     // This is a placeholder - in a real implementation, you would use a barcode library
     // like QuaggaJS or ZXing to decode the barcode from the video stream
-    alert('Barcode scanning feature is being developed. Please enter the barcode manually for now.');
+    showNotification('Barcode scanning feature is being developed. Please enter the barcode manually for now.', 'info');
     closeBarcodeModal();
 }
 
@@ -1786,4 +2644,148 @@ function closeBarcodeModal() {
     
     // Focus on barcode input
     document.getElementById('inventorySearchBarcode').focus();
+}
+
+// Notification system for better user feedback
+function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+        position: fixed; top: 20px; right: 20px; 
+        padding: 15px 20px; border-radius: 8px; z-index: 2000; 
+        font-weight: bold; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        max-width: 300px; word-wrap: break-word;
+    `;
+    
+    // Set colors based on type
+    switch(type) {
+        case 'success':
+            notification.style.background = '#27ae60';
+            notification.style.color = 'white';
+            break;
+        case 'error':
+            notification.style.background = '#e74c3c';
+            notification.style.color = 'white';
+            break;
+        case 'warning':
+            notification.style.background = '#f39c12';
+            notification.style.color = 'white';
+            break;
+        default:
+            notification.style.background = '#3498db';
+            notification.style.color = 'white';
+    }
+    
+    notification.innerHTML = message;
+    document.body.appendChild(notification);
+    
+    // Remove notification after 4 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+        }
+    }, 4000);
+}
+
+// System health check function
+function performSystemHealthCheck() {
+    const healthReport = {
+        timestamp: new Date().toISOString(),
+        status: 'healthy',
+        issues: [],
+        warnings: [],
+        recommendations: []
+    };
+    
+    // Check localStorage support
+    try {
+        localStorage.setItem('test', 'test');
+        localStorage.removeItem('test');
+        healthReport.localStorage = 'working';
+    } catch (error) {
+        healthReport.localStorage = 'not supported';
+        healthReport.status = 'warning';
+        healthReport.warnings.push('localStorage not supported - data persistence may be limited');
+    }
+    
+    // Check data integrity
+    if (!Array.isArray(products)) {
+        healthReport.status = 'error';
+        healthReport.issues.push('Products data is corrupted');
+    }
+    if (!Array.isArray(customers)) {
+        healthReport.status = 'error';
+        healthReport.issues.push('Customers data is corrupted');
+    }
+    if (!Array.isArray(sales)) {
+        healthReport.status = 'error';
+        healthReport.issues.push('Sales data is corrupted');
+    }
+    if (!Array.isArray(users)) {
+        healthReport.status = 'error';
+        healthReport.issues.push('Users data is corrupted');
+    }
+    
+    // Check for empty critical data
+    if (users.length === 0) {
+        healthReport.status = 'error';
+        healthReport.issues.push('No users found - system cannot function');
+    }
+    if (products.length === 0) {
+        healthReport.warnings.push('No products found - add products to start selling');
+    }
+    
+    // Check for data inconsistencies
+    const invalidProducts = products.filter(p => !p.id || !p.name || typeof p.price !== 'number');
+    if (invalidProducts.length > 0) {
+        healthReport.warnings.push(`${invalidProducts.length} products have invalid data`);
+    }
+    
+    const invalidCustomers = customers.filter(c => !c.id || !c.name || !c.phone);
+    if (invalidCustomers.length > 0) {
+        healthReport.warnings.push(`${invalidCustomers.length} customers have invalid data`);
+    }
+    
+    // Check for low stock items
+    const lowStockItems = products.filter(p => p.stock <= (p.minStock || 0));
+    if (lowStockItems.length > 0) {
+        healthReport.warnings.push(`${lowStockItems.length} items are low on stock`);
+    }
+    
+    // Check for expiring items
+    const currentDate = new Date();
+    const expiringItems = products.filter(p => {
+        if (!p.expiryDate) return false;
+        const expiryDate = new Date(p.expiryDate);
+        const daysUntilExpiry = Math.ceil((expiryDate - currentDate) / (1000 * 60 * 60 * 24));
+        return daysUntilExpiry <= 30 && daysUntilExpiry >= 0;
+    });
+    if (expiringItems.length > 0) {
+        healthReport.warnings.push(`${expiringItems.length} items are expiring soon`);
+    }
+    
+    // Check for high utang customers
+    const highUtangCustomers = customers.filter(c => (c.utang || 0) > (c.creditLimit || 0));
+    if (highUtangCustomers.length > 0) {
+        healthReport.warnings.push(`${highUtangCustomers.length} customers have exceeded credit limits`);
+    }
+    
+    // Generate recommendations
+    if (products.length === 0) {
+        healthReport.recommendations.push('Add products to inventory to start selling');
+    }
+    if (customers.length === 0) {
+        healthReport.recommendations.push('Add customers to track utang and sales');
+    }
+    if (suppliers.length === 0) {
+        healthReport.recommendations.push('Add suppliers to manage inventory restocking');
+    }
+    if (lowStockItems.length > 0) {
+        healthReport.recommendations.push('Restock low inventory items');
+    }
+    if (expiringItems.length > 0) {
+        healthReport.recommendations.push('Check expiring items and consider discounts');
+    }
+    
+    console.log('System Health Check:', healthReport);
+    return healthReport;
 }
